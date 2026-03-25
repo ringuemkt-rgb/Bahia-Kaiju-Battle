@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Map from "@/pages/Map";
 import Level from "@/pages/Level";
+import Lair from "@/pages/Lair";
 
 function Router() {
   return (
@@ -14,6 +15,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/map" component={Map} />
       <Route path="/level/:id" component={Level} />
+      <Route path="/lair" component={Lair} />
       <Route component={NotFound} />
     </Switch>
   );
