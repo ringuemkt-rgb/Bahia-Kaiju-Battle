@@ -1,495 +1,756 @@
 import { useLocation, useParams } from "wouter";
 import { useEffect, useState, useRef } from "react";
+
+// Assets
 import baixoSulBg from "../assets/baixo_sul_bg.png";
+import salvadorBg from "../assets/salvador_bg.png";
 import kaijuSprite from "../assets/kaiju_sprite.png";
+import crabKaiju from "../assets/crab_kaiju.png";
+import birdKaiju from "../assets/bird_kaiju.png";
+import gatorKaiju from "../assets/gator_kaiju.png";
+import rayKaiju from "../assets/ray_kaiju.png";
+
 import woodenBoat from "../assets/wooden_boat.png";
 import speedboat from "../assets/speedboat.png";
 import humanNpc from "../assets/human_npc.png";
 import bossMilitary from "../assets/boss_military.png";
 import container from "../assets/container.png";
+import building1 from "../assets/building_1.png";
+import building2 from "../assets/building_2.png";
+import tank from "../assets/tank.png";
+import heli from "../assets/heli.png";
 
-// --- Game Logic Types ---
-type Weather = 'clear' | 'rain' | 'fog' | 'storm';
-type Tide = 'high' | 'low' | 'normal';
-type NPCState = 'idle' | 'fleeing' | 'panicking' | 'attacking' | 'dead';
-type ObjectType = 'boat' | 'speedboat' | 'human' | 'military' | 'boss' | 'container';
+// --- Enums & Types ---
+type Environment = 'clear' | 'rain' | 'fog' | 'storm';
+type TideLevel = 'high' | 'low' | 'normal';
+type EntityState = 'idle' | 'fleeing' | 'panicking' | 'attacking' | 'dead' | 'stunned' | 'grabbed';
+type EntityType = 'civilian' | 'boat' | 'speedboat' | 'container' | 'building_small' | 'building_large' | 'military_infantry' | 'military_tank' | 'military_heli' | 'boss';
+type AttackType = 'light' | 'heavy' | 'special' | 'grab' | 'throw' | 'eat';
+
+interface CombatText {
+    id: number;
+    text: string;
+    x: number;
+    y: number;
+    type: 'damage' | 'heal' | 'energy' | 'system';
+}
 
 interface GameEntity {
   id: string;
-  type: ObjectType;
+  type: EntityType;
   x: number;
   y: number;
+  width: number;
+  height: number;
   hp: number;
-  maxHp?: number;
-  state: NPCState;
-  vx?: number;
-  vy?: number;
+  maxHp: number;
+  state: EntityState;
+  vx: number;
+  vy: number;
+  threatLevel: number; // For targeting priorities
+  sprite: string;
 }
 
 export default function Level() {
   const [, setLocation] = useLocation();
   const { id } = useParams();
   
-  // --- Game State ---
-  const [destruction, setDestruction] = useState(0);
+  // --- Game Engine State ---
+  const [gameState, setGameState] = useState<'intro' | 'playing' | 'victory' | 'defeat'>('playing');
+  const [destruction, setDestruction] = useState(0); // 0 to 100
   const [score, setScore] = useState(0);
-  const [health, setHealth] = useState(100);
-  const [energy, setEnergy] = useState(100);
-  const [wantedLevel, setWantedLevel] = useState(0);
   
-  // Environment Systems
-  const [weather, setWeather] = useState<Weather>('clear');
-  const [tide, setTide] = useState<Tide>('normal');
+  // --- Player State ---
+  const [health, setHealth] = useState(100);
+  const [maxHealth] = useState(100);
+  const [energy, setEnergy] = useState(100);
+  const [maxEnergy] = useState(100);
+  const [playerX, setPlayerX] = useState(20); // 0 to 100%
+  const [isFacingRight, setIsFacingRight] = useState(true);
+  const [isAttacking, setIsAttacking] = useState<AttackType | null>(null);
+  const [grabbedEntityId, setGrabbedEntityId] = useState<string | null>(null);
+  
+  // --- World State ---
+  const [wantedLevel, setWantedLevel] = useState(1); // 1 to 5 stars
+  const [weather, setWeather] = useState<Environment>('clear');
+  const [tide, setTide] = useState<TideLevel>('normal');
   const [isNight, setIsNight] = useState(false);
   const [isEarthquake, setIsEarthquake] = useState(false);
 
-  // Entities & Combat
+  // --- Entities & FX ---
   const [entities, setEntities] = useState<GameEntity[]>([]);
+  const [combatTexts, setCombatTexts] = useState<CombatText[]>([]);
   const [messages, setMessages] = useState<string[]>([]);
-  const [grabbedItem, setGrabbedItem] = useState<GameEntity | null>(null);
-  const [bossActive, setBossActive] = useState(false);
   
-  // Simulation Loop
-  useEffect(() => {
-    // Initial spawn
-    const initialEntities: GameEntity[] = [];
-    
-    // Humans
-    for(let i=0; i<5; i++) {
-        initialEntities.push({
-          id: `human-${i}`, type: 'human', x: 30 + Math.random() * 50, y: 15 + Math.random() * 10, hp: 10, state: 'panicking'
-        });
-    }
+  const combatTextIdCounter = useRef(0);
+  const engineTickRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Boats & Containers based on region
-    if (id === 'valenca' || id === 'camamu' || id === 'salvador') {
-      for(let i=0; i<2; i++) {
-        initialEntities.push({
-          id: `boat-${i}`, type: 'boat', x: 20 + Math.random() * 60, y: 60 + Math.random() * 10, hp: 30, state: 'idle'
-        });
-      }
-      initialEntities.push({
-        id: `container-1`, type: 'container', x: 70, y: 15, hp: 50, state: 'idle'
-      });
-    } else {
-        initialEntities.push({
-            id: `speedboat-1`, type: 'speedboat', x: 60, y: 65, hp: 40, state: 'idle'
-        });
-    }
-    
-    setEntities(initialEntities);
-
-    // Main Game Loop
-    const interval = setInterval(() => {
-      // Regen
-      setEnergy(prev => Math.min(100, prev + 2));
-      
-      // Random Environment Changes
-      if (Math.random() < 0.05) {
-        const weathers: Weather[] = ['clear', 'rain', 'fog', 'storm'];
-        setWeather(weathers[Math.floor(Math.random() * weathers.length)]);
-      }
-      
-      // Boss Spawn Logic
-      if (destruction > 50 && !bossActive) {
-          setBossActive(true);
-          addMessage("ALERTA: COLOSSO MILITAR DETECTADO!");
-          setEntities(prev => [...prev, {
-              id: 'boss-1', type: 'boss', x: 80, y: 30, hp: 200, maxHp: 200, state: 'attacking'
-          }]);
-      }
-
-      // Entity AI
-      setEntities(prev => prev.map(ent => {
-        let newX = ent.x;
-        let newState = ent.state;
-
-        if (ent.type === 'human') {
-             newX += (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 3);
-             newX = Math.max(0, Math.min(100, newX));
-        }
-
-        if ((ent.type === 'boat' || ent.type === 'speedboat') && newState === 'idle' && Math.random() < 0.1) {
-          newState = 'fleeing';
-        }
-
-        if (newState === 'fleeing') {
-          newX += 2;
-        }
-        
-        if (ent.type === 'boss') {
-            newX -= 0.5;
-            if (Math.random() < 0.15) {
-                setHealth(h => Math.max(0, h - 8));
-                addMessage("Mutante Militar Atirou!");
-                triggerScreenShake('small');
-            }
-        }
-
-        return { ...ent, x: newX, state: newState };
-      }).filter(ent => ent.x < 120 && ent.hp > 0)); 
-
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [id, destruction, bossActive]);
-
-  const triggerScreenShake = (intensity: 'small' | 'large' = 'large') => {
-      const screen = document.getElementById('game-screen');
-      if (screen) {
-        screen.classList.remove('animate-shake', 'animate-shake-small');
-        // trigger reflow
-        void screen.offsetWidth;
-        screen.classList.add(intensity === 'large' ? 'animate-shake' : 'animate-shake-small');
-      }
+  // --- Helpers ---
+  const spawnCombatText = (text: string, x: number, y: number, type: CombatText['type']) => {
+      const id = combatTextIdCounter.current++;
+      setCombatTexts(prev => [...prev, { id, text, x, y, type }]);
+      setTimeout(() => {
+          setCombatTexts(prev => prev.filter(ct => ct.id !== id));
+      }, 1000);
   };
 
   const addMessage = (msg: string) => {
     setMessages(prev => [...prev.slice(-3), msg]);
   };
 
-  const handleAttack = (type: 'punch' | 'beam' | 'stomp' | 'grab' | 'eat' | 'throw') => {
-    let cost = 0;
-    let damage = 0;
-    let attackRange = [10, 40]; // Base range x=10 to x=40
-    
+  const triggerScreenShake = (intensity: 'small' | 'large' | 'massive' = 'large') => {
+      const screen = document.getElementById('game-screen');
+      if (screen) {
+        screen.classList.remove('animate-shake', 'animate-shake-small', 'animate-shake-massive');
+        void screen.offsetWidth; // trigger reflow
+        screen.classList.add(`animate-shake${intensity === 'large' ? '' : '-' + intensity}`);
+      }
+  };
+
+  // --- Initialization & Spawning ---
+  useEffect(() => {
+    const initialEntities: GameEntity[] = [];
+    let entityId = 0;
+
+    const spawn = (type: EntityType, x: number, y: number, props: Partial<GameEntity> = {}) => {
+        let maxHp = 10, w = 5, h = 5, sprite = humanNpc, threat = 0;
+        
+        switch(type) {
+            case 'civilian': maxHp = 5; sprite = humanNpc; w=4; h=8; break;
+            case 'boat': maxHp = 30; sprite = woodenBoat; w=12; h=12; break;
+            case 'speedboat': maxHp = 40; sprite = speedboat; w=14; h=10; break;
+            case 'container': maxHp = 60; sprite = container; w=15; h=15; break;
+            case 'building_small': maxHp = 100; sprite = building1; w=20; h=30; break;
+            case 'building_large': maxHp = 250; sprite = building2; w=25; h=45; break;
+            case 'military_infantry': maxHp = 20; sprite = humanNpc; w=4; h=8; threat = 1; break; // Placeholder sprite
+            case 'military_tank': maxHp = 150; sprite = tank; w=20; h=15; threat = 3; break;
+            case 'military_heli': maxHp = 80; sprite = heli; w=20; h=12; threat = 4; break;
+            case 'boss': maxHp = 1000; sprite = bossMilitary; w=30; h=40; threat = 10; break;
+        }
+
+        initialEntities.push({
+            id: `ent_${entityId++}`, type, x, y, width: w, height: h, hp: maxHp, maxHp, sprite,
+            state: props.state || 'idle', vx: 0, vy: 0, threatLevel: threat, ...props
+        });
+    };
+
+    // Construct Scene based on level ID
+    // Static structures (background to foreground)
+    spawn('building_large', 60, 20);
+    spawn('building_small', 45, 20);
+    spawn('building_large', 85, 20);
+    spawn('container', 35, 10);
+    spawn('container', 38, 25);
+
+    // Dynamic
+    for(let i=0; i<6; i++) spawn('civilian', 20 + Math.random() * 60, 10 + Math.random() * 5);
+    spawn('boat', 20, 20);
+    spawn('speedboat', 70, 25);
+
+    setEntities(initialEntities);
+
+  }, [id]);
+
+  // --- Main Game Engine Loop ---
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+
+    engineTickRef.current = setInterval(() => {
+      
+      // 1. Resource Regen
+      setEnergy(prev => Math.min(maxEnergy, prev + 1));
+      
+      // 2. Environment Dynamics (Simplified fast-forward for testing)
+      if (Math.random() < 0.02) {
+          const weathers: Environment[] = ['clear', 'rain', 'fog', 'storm'];
+          setWeather(weathers[Math.floor(Math.random() * weathers.length)]);
+      }
+
+      // 3. AI & Physics Update
+      setEntities(prevEntities => {
+          let updated = [...prevEntities];
+          let totalMilitaryThreat = 0;
+
+          updated = updated.map(ent => {
+              if (ent.state === 'dead' || ent.state === 'grabbed') return ent;
+
+              let newX = ent.x;
+              let newY = ent.y;
+              let newState = ent.state;
+              let newHp = ent.hp;
+
+              // Distance to player
+              const distToPlayer = Math.abs(ent.x - playerX);
+
+              // Basic Behavior Tree
+              switch(ent.type) {
+                  case 'civilian':
+                      if (distToPlayer < 30 && newState !== 'panicking') {
+                          newState = 'panicking';
+                          spawnCombatText('!', ent.x, ent.y + 10, 'system');
+                      }
+                      if (newState === 'panicking' || newState === 'fleeing') {
+                          const dir = ent.x < playerX ? -1 : 1;
+                          newX += dir * 1.5; // Run away
+                      }
+                      break;
+
+                  case 'military_tank':
+                  case 'military_heli':
+                  case 'military_infantry':
+                      totalMilitaryThreat += ent.threatLevel;
+                      if (distToPlayer > 40) {
+                          // Move towards player
+                          newX += ent.x > playerX ? -0.5 : 0.5;
+                      } else {
+                          newState = 'attacking';
+                          // Fire logic
+                          if (Math.random() < (ent.type === 'military_tank' ? 0.1 : 0.2)) {
+                              const damage = ent.type === 'military_tank' ? 10 : ent.type === 'military_heli' ? 5 : 2;
+                              setHealth(h => Math.max(0, h - damage));
+                              spawnCombatText(`-${damage}`, playerX, 50, 'damage');
+                              triggerScreenShake('small');
+                          }
+                      }
+                      break;
+                  
+                  case 'boss':
+                      if (distToPlayer > 20) {
+                          newX += ent.x > playerX ? -1 : 1;
+                      } else {
+                          if (Math.random() < 0.2) {
+                              setHealth(h => Math.max(0, h - 20));
+                              spawnCombatText('-20', playerX, 50, 'damage');
+                              triggerScreenShake('large');
+                          }
+                      }
+                      break;
+
+                  default: // Static or semi-static (boats)
+                      if ((ent.type === 'boat' || ent.type === 'speedboat') && distToPlayer < 40 && Math.random() < 0.1) {
+                           newState = 'fleeing';
+                      }
+                      if (newState === 'fleeing') {
+                           newX += ent.type === 'speedboat' ? 2 : 1;
+                      }
+                      break;
+              }
+
+              // Bounds checking
+              newX = Math.max(0, Math.min(100, newX));
+
+              return { ...ent, x: newX, y: newY, state: newState, hp: newHp };
+          });
+
+          // 4. Director / Spawner Logic based on Wanted Level
+          const maxThreatAllowed = wantedLevel * 5;
+          if (totalMilitaryThreat < maxThreatAllowed && Math.random() < 0.1) {
+              // Spawn military
+              const spawnSide = Math.random() > 0.5 ? -10 : 110;
+              if (wantedLevel >= 2 && Math.random() < 0.5) {
+                 updated.push({
+                    id: `tank_${Date.now()}`, type: 'military_tank', x: spawnSide, y: 15, width: 20, height: 15, hp: 150, maxHp: 150, sprite: tank, state: 'idle', vx: 0, vy: 0, threatLevel: 3
+                 });
+                 addMessage("Tanque inimigo a caminho!");
+              } else if (wantedLevel >= 3 && Math.random() < 0.3) {
+                 updated.push({
+                    id: `heli_${Date.now()}`, type: 'military_heli', x: spawnSide, y: 70, width: 20, height: 12, hp: 80, maxHp: 80, sprite: heli, state: 'idle', vx: 0, vy: 0, threatLevel: 4
+                 });
+              } else {
+                 // Infantry placeholder logic
+              }
+          }
+
+          // Clean up dead/off-screen entities
+          updated = updated.filter(ent => ent.hp > 0 && ent.x >= -20 && ent.x <= 120);
+
+          return updated;
+      });
+
+      // 5. Win/Loss Conditions
+      if (health <= 0) {
+          setGameState('defeat');
+      } else if (destruction >= 100) {
+          setGameState('victory');
+      }
+
+    }, 100); // 10 FPS Logic update for browser performance
+
+    return () => {
+        if (engineTickRef.current) clearInterval(engineTickRef.current);
+    };
+  }, [gameState, playerX, wantedLevel]);
+
+  // --- Combat Engine ---
+  const performAttack = (type: AttackType) => {
+    if (gameState !== 'playing') return;
+
+    let cost = 0, baseDamage = 0, range = 15, hitboxOffset = isFacingRight ? 15 : -15;
+    let attackDuration = 300;
+
     switch(type) {
-      case 'punch': cost = 10; damage = 15; break;
-      case 'beam': cost = 40; damage = 40; attackRange = [10, 90]; break;
-      case 'stomp': cost = 25; damage = 25; attackRange = [0, 30]; break;
-      case 'eat': cost = 5; damage = 100; attackRange = [10, 30]; break;
-      case 'grab': cost = 15; damage = 0; attackRange = [10, 40]; break;
-      case 'throw': cost = 10; damage = 60; attackRange = [10, 90]; break;
+      case 'light': cost = 5; baseDamage = 20; range = 15; break;
+      case 'heavy': cost = 25; baseDamage = 60; range = 20; hitboxOffset = isFacingRight ? 20 : -20; triggerScreenShake('small'); break;
+      case 'special': cost = 50; baseDamage = 150; range = 60; hitboxOffset = isFacingRight ? 30 : -30; triggerScreenShake('massive'); attackDuration = 600; break;
+      case 'grab': cost = 15; break;
+      case 'throw': cost = 10; baseDamage = 80; range = 70; hitboxOffset = isFacingRight ? 40 : -40; triggerScreenShake('large'); break;
+      case 'eat': cost = 10; range = 15; break;
     }
 
-    if (energy >= cost) {
-      setEnergy(prev => prev - cost);
-      
-      // Action logic
-      if (type === 'grab') {
-        const grabableTypes = ['boat', 'speedboat', 'human', 'container'];
-        const grabable = entities.find(e => grabableTypes.includes(e.type) && e.x > attackRange[0] && e.x < attackRange[1]);
-        if (grabable) {
-          addMessage(`Agarrou ${grabable.type}!`);
-          setGrabbedItem(grabable);
-          setEntities(prev => prev.filter(e => e.id !== grabable.id));
+    if (energy < cost) {
+        spawnCombatText('Sem Energia', playerX, 60, 'system');
+        return;
+    }
+
+    setEnergy(prev => prev - cost);
+    setIsAttacking(type);
+    setTimeout(() => setIsAttacking(null), attackDuration);
+
+    const hitXCenter = playerX + hitboxOffset;
+
+    // --- Interaction Logic ---
+    if (type === 'grab') {
+        const grabables = ['civilian', 'boat', 'speedboat', 'container', 'military_infantry', 'military_tank'];
+        const target = entities.find(e => 
+            e.state !== 'grabbed' && 
+            grabables.includes(e.type) && 
+            Math.abs(e.x - hitXCenter) < range
+        );
+
+        if (target) {
+            setGrabbedEntityId(target.id);
+            setEntities(prev => prev.map(e => e.id === target.id ? { ...e, state: 'grabbed' } : e));
+            addMessage(`Agarrou ${target.type.replace('_', ' ')}`);
         } else {
-          addMessage("Nada para agarrar!");
+             spawnCombatText('Errou', hitXCenter, 40, 'system');
         }
         return;
-      }
+    }
 
-      if (type === 'throw' && grabbedItem) {
-          addMessage(`Arremessou ${grabbedItem.type}!`);
-          setGrabbedItem(null);
-          damage = 60 + (grabbedItem.type === 'container' ? 40 : grabbedItem.type === 'boat' ? 20 : 0);
-          triggerScreenShake('large');
-      }
+    if (type === 'throw') {
+        if (!grabbedEntityId) return;
+        const projectile = entities.find(e => e.id === grabbedEntityId);
+        if (projectile) {
+            // Un-grab and kill the thrown object immediately for simplicity
+            setEntities(prev => prev.filter(e => e.id !== projectile.id));
+            setGrabbedEntityId(null);
+            
+            // Apply damage to everything in a massive line
+            let hitCount = 0;
+            let totalDmg = baseDamage + (projectile.type === 'container' || projectile.type === 'military_tank' ? 100 : projectile.type.includes('boat') ? 50 : 10);
+            
+            setEntities(prev => prev.map(e => {
+                const distance = isFacingRight ? (e.x - playerX) : (playerX - e.x);
+                if (distance > 0 && distance < range && e.state !== 'grabbed') {
+                    hitCount++;
+                    spawnCombatText(`-${totalDmg}`, e.x, e.y + e.height, 'damage');
+                    return { ...e, hp: e.hp - totalDmg };
+                }
+                return e;
+            }));
 
-      if (type === 'eat') {
-          const edible = entities.find(e => e.type === 'human' && e.x > attackRange[0] && e.x < attackRange[1]);
-          if (edible) {
-              addMessage("Devorou Humano! +20 HP, +Pânico");
-              setHealth(prev => Math.min(100, prev + 20));
-              setWantedLevel(prev => Math.min(5, prev + 1));
-              setEntities(prev => prev.filter(e => e.id !== edible.id));
-          } else if (grabbedItem && grabbedItem.type === 'human') {
-              addMessage("Devorou Humano Agarrado! +20 HP");
-              setHealth(prev => Math.min(100, prev + 20));
-              setWantedLevel(prev => Math.min(5, prev + 1));
-              setGrabbedItem(null);
-          } else {
-              addMessage("Nada macio para comer!");
-          }
-          return;
-      }
+            if(hitCount > 0) {
+                 addMessage(`Impacto Crítico! (${hitCount} acertos)`);
+                 setDestruction(prev => Math.min(100, prev + 5));
+                 setScore(prev => prev + hitCount * 50);
+            }
+        }
+        return;
+    }
 
-      // Normal Combat Resolution
-      let hitCount = 0;
-      setEntities(prev => prev.map(e => {
-          if (e.x > attackRange[0] && e.x < attackRange[1]) {
-              hitCount++;
-              if (e.type === 'boss') addMessage("Dano no Boss!");
-              return { ...e, hp: e.hp - damage };
-          }
-          return e;
-      }));
+    if (type === 'eat') {
+        const edibles = ['civilian', 'military_infantry'];
+        // Check grabbed first
+        if (grabbedEntityId) {
+            const held = entities.find(e => e.id === grabbedEntityId);
+            if (held && edibles.includes(held.type)) {
+                setHealth(prev => Math.min(maxHealth, prev + 25));
+                setEntities(prev => prev.filter(e => e.id !== grabbedEntityId));
+                setGrabbedEntityId(null);
+                setWantedLevel(prev => Math.min(5, prev + 1)); // Eating raises wanted level fast
+                spawnCombatText('+25 HP', playerX, 60, 'heal');
+                addMessage("Recuperação Vital!");
+                triggerScreenShake('small');
+                return;
+            }
+        }
 
-      if (hitCount > 0 || type === 'throw') {
-         setDestruction(prev => Math.min(100, prev + (damage/2)));
-         setScore(prev => prev + (damage * 10));
-      }
+        // Try eating from ground
+        const target = entities.find(e => edibles.includes(e.type) && Math.abs(e.x - hitXCenter) < range);
+        if (target) {
+            setHealth(prev => Math.min(maxHealth, prev + 15));
+            setEntities(prev => prev.filter(e => e.id !== target.id));
+            setWantedLevel(prev => Math.min(5, prev + 0.5));
+            spawnCombatText('+15 HP', playerX, 60, 'heal');
+            triggerScreenShake('small');
+        } else {
+             spawnCombatText('Errou', hitXCenter, 40, 'system');
+        }
+        return;
+    }
 
-      triggerScreenShake(type === 'beam' || type === 'stomp' ? 'large' : 'small');
+    // --- Standard Damage Resolution (Light, Heavy, Special) ---
+    let hits = 0;
+    let destructionEarned = 0;
 
-    } else {
-      addMessage("Energia Insuficiente!");
+    setEntities(prev => prev.map(e => {
+        if (e.state === 'grabbed') return e;
+        
+        // Calculate hit detection based on facing direction and range
+        const isHit = isFacingRight 
+            ? (e.x >= playerX && e.x <= playerX + range) 
+            : (e.x <= playerX && e.x >= playerX - range);
+
+        if (isHit) {
+            hits++;
+            
+            // Damage Modifiers
+            let finalDamage = baseDamage;
+            if (e.type.includes('building')) finalDamage *= (type === 'heavy' ? 1.5 : 1); // Heavy is good against buildings
+            if (e.type.includes('military')) finalDamage *= (type === 'special' ? 2 : 1);
+
+            spawnCombatText(`-${finalDamage}`, e.x, e.y + e.height + 5, 'damage');
+
+            // Calculate destruction points if this hit kills a structure
+            if (e.hp - finalDamage <= 0 && e.type.includes('building')) {
+                destructionEarned += e.type === 'building_large' ? 10 : 5;
+                setWantedLevel(prev => Math.min(5, prev + 0.5));
+            }
+
+            return { ...e, hp: e.hp - finalDamage };
+        }
+        return e;
+    }));
+
+    if (hits > 0) {
+        setDestruction(prev => Math.min(100, prev + destructionEarned + 0.5));
+        setScore(prev => prev + hits * 10 + destructionEarned * 100);
     }
   };
 
-  const envStyles = {
-      overlay: isNight ? "bg-[#051114]/80 mix-blend-multiply" : weather === 'rain' ? "bg-gray-500/50 mix-blend-multiply" : weather === 'storm' ? "bg-purple-900/60 mix-blend-multiply" : "bg-transparent",
-      filters: weather === 'fog' ? "blur-[2px] brightness-125" : ""
+  // --- Input Handling ---
+  const handleMove = (dir: 'left' | 'right') => {
+      if (gameState !== 'playing') return;
+      setIsFacingRight(dir === 'right');
+      setPlayerX(prev => {
+          const moveAmt = 2;
+          const newX = dir === 'right' ? prev + moveAmt : prev - moveAmt;
+          return Math.max(0, Math.min(100, newX));
+      });
   };
+
+  // --- Rendering Helpers ---
+  const envStyles = {
+      overlay: isNight ? "bg-[#051114]/90 mix-blend-multiply" : weather === 'rain' ? "bg-gray-500/50 mix-blend-multiply" : weather === 'storm' ? "bg-[#2b1b3d]/70 mix-blend-multiply" : "bg-transparent",
+      filters: weather === 'fog' ? "blur-[3px] brightness-110 contrast-125" : ""
+  };
+
+  // Get currently grabbed entity object to render in hand
+  const grabbedEntity = entities.find(e => e.id === grabbedEntityId);
 
   return (
     <div 
       id="game-screen" 
-      className={`relative w-full h-screen overflow-hidden flex flex-col pixelated-render`}
-      style={{ backgroundColor: isNight ? '#020a0d' : '#4a7a8c' }}
+      className={`relative w-full h-screen overflow-hidden flex flex-col font-sans select-none`}
+      style={{ backgroundColor: isNight ? '#020a0d' : '#87ceeb' }}
     >
-      
-      {/* Background Parallax */}
+      {/* ---------------- ENVIRONMENT ---------------- */}
       <div 
-        className={`absolute inset-0 z-0 transition-all duration-1000 ${envStyles.filters}`}
+        className={`absolute inset-0 z-0 transition-all duration-[3000ms] ${envStyles.filters} pixelated-render`}
         style={{
-          backgroundImage: `url(${baixoSulBg})`,
+          backgroundImage: `url(${id === 'salvador' ? salvadorBg : baixoSulBg})`,
           backgroundSize: 'cover',
           backgroundPosition: 'bottom center',
           backgroundRepeat: 'repeat-x',
-          transform: tide === 'high' ? 'translateY(5%)' : tide === 'low' ? 'translateY(-5%)' : 'none'
+          transform: tide === 'high' ? 'translateY(10%)' : tide === 'low' ? 'translateY(-10%)' : 'none'
         }}
       />
-      
-      <div className={`absolute inset-0 z-10 pointer-events-none transition-colors duration-1000 ${envStyles.overlay}`} />
+      <div className={`absolute inset-0 z-10 pointer-events-none transition-colors duration-[3000ms] ${envStyles.overlay}`} />
       
       {(weather === 'rain' || weather === 'storm') && (
-         <div className="absolute inset-0 z-15 pointer-events-none bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjUwIj48cmVjdCB3aWR0aD0iMSIgaGVpZ2h0PSI0MCIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjMpIi8+PC9zdmc+')] animate-[rain_0.5s_linear_infinite]" />
+         <div className="absolute inset-0 z-15 pointer-events-none bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjUwIj48cmVjdCB3aWR0aD0iMSIgaGVpZ2h0PSI0MCIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjQpIi8+PC9zdmc+')] animate-[rain_0.3s_linear_infinite]" />
+      )}
+      {weather === 'storm' && (
+         <div className="absolute inset-0 z-15 pointer-events-none bg-white animate-[lightning_5s_infinite]" />
       )}
 
-      {weather === 'fog' && <div className="absolute inset-0 z-15 pointer-events-none bg-white/40 backdrop-blur-[3px]" />}
-
-      <div className="scanlines z-50 pointer-events-none" />
-
-      {/* HUD Top */}
-      <div className="absolute top-0 left-0 w-full p-4 z-40 flex justify-between items-start pointer-events-none">
-        {/* Left Stats */}
-        <div className="flex flex-col gap-2 w-[40%] max-w-[200px]">
-          <div className="w-full bg-black/90 border-2 border-white p-1 shadow-[4px_4px_0_rgba(0,0,0,1)]">
-            <div className="flex justify-between items-center mb-1">
-              <span className="font-display text-[10px] text-white">HP</span>
-              <span className="font-display text-[10px] text-white">{health}%</span>
-            </div>
-            <div className="w-full h-3 bg-gray-800">
-              <div className="h-full bg-red-600 transition-all duration-300" style={{ width: `${health}%` }} />
+      {/* ---------------- HUD TOP ---------------- */}
+      <div className="absolute top-0 left-0 w-full p-2 md:p-4 z-50 flex justify-between items-start pointer-events-none">
+        
+        {/* Core Stats */}
+        <div className="flex flex-col gap-1 w-[40%] max-w-[250px]">
+          <div className="bg-[#111] border-2 border-gray-600 p-1 shadow-[2px_2px_0_rgba(0,0,0,0.8)] relative">
+            <span className="absolute top-0 left-1 font-display text-[8px] text-white z-10 drop-shadow-[1px_1px_0_rgba(0,0,0,1)]">HP {Math.floor(health)}/{maxHealth}</span>
+            <div className="w-full h-4 md:h-5 bg-gray-900 border border-gray-800">
+              <div className="h-full bg-gradient-to-r from-red-800 to-red-500 transition-all duration-200" style={{ width: `${(health/maxHealth)*100}%` }} />
             </div>
           </div>
           
-          <div className="w-full bg-black/90 border-2 border-white p-1 shadow-[4px_4px_0_rgba(0,0,0,1)]">
-            <div className="flex justify-between items-center mb-1">
-              <span className="font-display text-[10px] text-white">ENERGIA ATL</span>
-              <span className="font-display text-[10px] text-white">{energy}%</span>
-            </div>
-            <div className="w-full h-3 bg-gray-800">
-              <div className="h-full bg-purple-500 transition-all duration-300" style={{ width: `${energy}%` }} />
+          <div className="bg-[#111] border-2 border-gray-600 p-1 shadow-[2px_2px_0_rgba(0,0,0,0.8)] relative">
+            <span className="absolute top-0 left-1 font-display text-[8px] text-white z-10 drop-shadow-[1px_1px_0_rgba(0,0,0,1)]">ATL EN {Math.floor(energy)}</span>
+            <div className="w-full h-3 bg-gray-900 border border-gray-800">
+              <div className="h-full bg-gradient-to-r from-purple-800 to-purple-400 transition-all duration-100" style={{ width: `${(energy/maxEnergy)*100}%` }} />
             </div>
           </div>
         </div>
 
-        {/* Center Environmental Info */}
+        {/* Global Status (Wanted & Destruction) */}
         <div className="flex flex-col items-center gap-1">
-           <div className="bg-black/90 border-2 border-white px-2 py-1 flex items-center gap-2 shadow-[4px_4px_0_rgba(0,0,0,1)]">
-             <span className="font-display text-[8px] text-blue-300 uppercase">Clima: {weather}</span>
+           <div className="bg-[#111]/90 border border-red-900 px-2 py-1 shadow-[2px_2px_0_rgba(0,0,0,1)] flex flex-col items-center">
+               <span className="font-display text-[8px] text-red-500 mb-1">NÍVEL DE AMEAÇA MILITAR</span>
+               <div className="flex gap-1">
+                   {[1,2,3,4,5].map(star => (
+                       <div key={star} className={`w-3 h-3 text-[10px] flex items-center justify-center font-display ${star <= Math.floor(wantedLevel) ? 'text-red-500' : 'text-gray-800'}`}>
+                           ★
+                       </div>
+                   ))}
+               </div>
            </div>
-           {/* Wanted Level */}
-           <div className="bg-black/80 px-2 py-1 flex gap-1 mt-1 border border-red-900">
-               <span className="font-display text-[8px] text-red-500 mr-1">MILITAR:</span>
-               {[1,2,3,4,5].map(star => (
-                   <div key={star} className={`w-3 h-3 text-[10px] flex items-center justify-center font-display ${star <= wantedLevel ? 'text-red-500 animate-pulse' : 'text-gray-700'}`}>
-                       ★
-                   </div>
-               ))}
+           
+           <div className="w-full bg-[#111]/90 border border-orange-900 p-1 shadow-[2px_2px_0_rgba(0,0,0,1)] text-center mt-1">
+              <div className="font-display text-[8px] text-orange-400 uppercase">Devastação</div>
+              <div className="text-white font-display text-xs">{Math.floor(destruction)}%</div>
            </div>
         </div>
 
-        {/* Right Stats */}
+        {/* Score & Exit */}
         <div className="flex flex-col items-end gap-2">
-          <div className="bg-black/90 border-2 border-white px-3 py-2 shadow-[4px_4px_0_rgba(0,0,0,1)]">
-            <span className="font-display text-sm text-yellow-400">PTS: {score.toString().padStart(6, '0')}</span>
+          <div className="bg-[#111] border-2 border-gray-600 px-3 py-1 md:py-2 shadow-[2px_2px_0_rgba(0,0,0,0.8)]">
+            <span className="font-display text-[10px] md:text-sm text-yellow-400">PTS\n{score.toString().padStart(7, '0')}</span>
           </div>
           <button 
             onClick={() => setLocation('/map')}
-            className="pointer-events-auto bg-black/90 text-white font-sans text-xl px-4 py-1 border-2 border-white hover:bg-white hover:text-black transition-colors shadow-[4px_4px_0_rgba(0,0,0,1)]"
+            className="pointer-events-auto bg-[#111] text-gray-300 font-display text-[8px] md:text-[10px] px-2 py-1 border-2 border-gray-600 hover:bg-white hover:text-black transition-colors shadow-[2px_2px_0_rgba(0,0,0,0.8)]"
           >
-            VOLTAR
+            [ PAUSA ]
           </button>
         </div>
       </div>
 
-      {/* Action Log */}
-      <div className="absolute top-24 left-1/2 -translate-x-1/2 z-40 w-full max-w-md pointer-events-none">
-        <div className="w-full text-center flex flex-col items-center">
+      {/* Action Messages Log */}
+      <div className="absolute top-32 left-0 w-full z-40 pointer-events-none px-4">
           {messages.map((msg, i) => (
-             <div key={i} className="font-sans text-xl text-white pixel-text-shadow bg-black/50 px-2 my-1 animate-in fade-in slide-in-from-bottom-2">
-               {msg}
+             <div key={i} className="font-display text-[8px] md:text-[10px] text-white pixel-text-shadow bg-black/30 w-max mb-1 animate-in slide-in-from-left fade-in duration-300 border-l-2 border-primary pl-1">
+               &gt; {msg}
              </div>
           ))}
-        </div>
       </div>
 
-      {/* Play Area */}
-      <div className="flex-1 relative z-20 flex items-end pb-[150px] md:pb-[180px]">
+      {/* ---------------- WORLD SCENE ---------------- */}
+      <div className="flex-1 relative z-20 flex items-end pb-[160px] md:pb-[180px] pixelated-render">
         
-        {/* Dynamic Entities */}
-        {entities.map(ent => (
+        {/* Entities Rendering */}
+        {entities.map(ent => {
+          if (ent.state === 'grabbed') return null; // Don't render grabbed items on the ground
+          
+          return (
           <div 
             key={ent.id}
-            className="absolute transition-all duration-1000 ease-linear flex flex-col items-center"
+            className="absolute flex flex-col items-center justify-end"
             style={{ 
               left: `${ent.x}%`, 
-              bottom: (ent.type === 'boat' || ent.type === 'speedboat') ? '25%' : '15%',
-              width: ent.type === 'human' ? '40px' : ent.type === 'boss' ? '180px' : ent.type === 'container' ? '80px' : '70px',
-              height: ent.type === 'human' ? '40px' : ent.type === 'boss' ? '180px' : ent.type === 'container' ? '80px' : '70px',
+              bottom: (ent.type === 'boat' || ent.type === 'speedboat') ? '15%' : '5%', // Basic Z-depth
+              width: `${ent.width}vh`, // Responsive sizing
+              height: `${ent.height}vh`,
+              transition: 'left 0.1s linear',
+              zIndex: ent.type.includes('building') ? 10 : 20
             }}
           >
-            {ent.type === 'boss' && ent.maxHp && (
-                <div className="w-full h-3 bg-gray-800 border-2 border-white mb-2 shadow-[2px_2px_0_rgba(0,0,0,1)]">
-                    <div className="h-full bg-red-600" style={{width: `${(ent.hp / ent.maxHp) * 100}%`}} />
+            {/* HP Bar for larger entities */}
+            {ent.maxHp > 20 && ent.hp < ent.maxHp && (
+                <div className="w-[80%] h-1 md:h-1.5 bg-black border border-gray-700 mb-1">
+                    <div 
+                        className={`h-full transition-all ${ent.type === 'boss' || ent.type.includes('military') ? 'bg-purple-500' : 'bg-red-500'}`} 
+                        style={{width: `${(ent.hp / ent.maxHp) * 100}%`}} 
+                    />
                 </div>
             )}
+            
+            {/* Sprite */}
             <img 
-              src={
-                  ent.type === 'boat' ? woodenBoat : 
-                  ent.type === 'human' ? humanNpc : 
-                  ent.type === 'boss' ? bossMilitary : 
-                  ent.type === 'container' ? container : speedboat
-              } 
+              src={ent.sprite} 
               alt={ent.type}
               className={`w-full h-full object-contain filter drop-shadow-xl ${
                   ent.state === 'fleeing' || ent.state === 'panicking' ? 'animate-bounce' : ''
-              }`}
+              } ${ent.type === 'military_tank' && Math.random() < 0.1 ? 'brightness-150' : '' /* Muzzle flash mock */}`}
+              style={{
+                  transform: ent.type === 'military_heli' ? `translateY(${Math.sin(Date.now()/200)*5}px)` : 'none'
+              }}
             />
           </div>
-        ))}
+        )})}
 
-        {/* Player Kaiju */}
-        <div className="relative w-56 h-56 md:w-80 md:h-80 ml-[10%] z-30 flex items-center justify-center">
+        {/* Player Kaiju Rendering */}
+        <div 
+            className="absolute z-30 flex flex-col items-center justify-end"
+            style={{
+                left: `${playerX}%`,
+                bottom: '5%',
+                width: '35vh',
+                height: '35vh',
+                transition: 'left 0.1s linear',
+            }}
+        >
+          {/* Action indicator ring */}
+          {isAttacking && (
+              <div className={`absolute inset-0 rounded-full animate-ping opacity-30 z-0 ${
+                  isAttacking === 'special' ? 'bg-purple-500 scale-150' : 
+                  isAttacking === 'heavy' ? 'bg-orange-500 scale-110' : 'bg-red-500'
+              }`} />
+          )}
+            
           <img 
-            src={kaijuSprite} 
-            alt="Kaiju" 
-            className="w-full h-full object-contain filter drop-shadow-[0_0_15px_rgba(0,0,0,0.8)]"
+            src={kaijuSprite} // Ideally this comes from Lair selection context
+            alt="Player Kaiju" 
+            className={`w-full h-full object-contain filter drop-shadow-[0_0_20px_rgba(0,0,0,0.9)] relative z-10 transition-transform ${isFacingRight ? '' : 'scale-x-[-1]'} ${isAttacking ? 'brightness-125' : ''}`}
+            style={{
+                transform: `${isFacingRight ? 'scaleX(1)' : 'scaleX(-1)'} ${isAttacking === 'heavy' ? 'translateY(-10px) rotate(5deg)' : ''}`
+            }}
           />
-          {/* Held Item Overlay */}
-          {grabbedItem && (
-             <div className="absolute top-[-10%] right-[-10%] w-20 h-20 bg-white/10 border-2 border-dashed border-white rounded-full flex items-center justify-center animate-pulse">
-                <img 
-                    src={grabbedItem.type === 'boat' ? woodenBoat : grabbedItem.type === 'container' ? container : humanNpc} 
-                    className="w-14 h-14 object-contain" 
-                />
+          
+          {/* Render Grabbed Item visually in hand */}
+          {grabbedEntity && (
+             <div 
+                 className={`absolute z-20 w-[40%] h-[40%] transition-transform ${isAttacking === 'throw' ? 'animate-bounce scale-150 blur-sm' : ''}`}
+                 style={{ 
+                     top: '20%', 
+                     left: isFacingRight ? '70%' : '-10%',
+                 }}
+             >
+                <img src={grabbedEntity.sprite} className="w-full h-full object-contain brightness-50 sepia hue-rotate-[180deg]" />
              </div>
           )}
         </div>
+
+        {/* Floating Combat Text */}
+        {combatTexts.map(ct => (
+            <div 
+                key={ct.id}
+                className={`absolute z-50 font-display text-[10px] md:text-xs pixel-text-shadow animate-[floatUp_1s_ease-out_forwards] pointer-events-none ${
+                    ct.type === 'damage' ? 'text-red-500' :
+                    ct.type === 'heal' ? 'text-green-400' :
+                    ct.type === 'system' ? 'text-gray-400' : 'text-blue-400'
+                }`}
+                style={{
+                    left: `${ct.x}%`,
+                    bottom: `${ct.y}%`
+                }}
+            >
+                {ct.text}
+            </div>
+        ))}
       </div>
 
-      {/* Controls Bottom */}
-      <div className="absolute bottom-0 w-full h-auto min-h-[150px] bg-[#111] border-t-4 border-white z-40 p-2 md:p-4">
-         {/* Destrucion Meter */}
-         <div className="w-full max-w-lg mx-auto mb-3 flex items-center gap-2 bg-black p-1 border border-gray-700">
-            <span className="font-display text-[8px] text-orange-500 uppercase tracking-widest">Nível de Destruição</span>
-            <div className="flex-1 h-3 bg-gray-900 border border-gray-600 relative">
-                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPjxyZWN0IHdpZHRoPSI0IiBoZWlnaHQ9IjQiIGZpbGw9IiM1NTAwMDAiIGZpbGwtb3BhY2l0eT0iMC40Ii8+PC9zdmc+')] opacity-50" />
-                <div className="h-full bg-orange-600 transition-all duration-300 relative z-10" style={{ width: `${destruction}%` }} />
-            </div>
-         </div>
-
-        <div className="flex justify-between items-center gap-2 h-full max-w-4xl mx-auto">
+      {/* ---------------- CONTROLS BOTTOM ---------------- */}
+      <div className="absolute bottom-0 w-full h-[160px] md:h-[180px] bg-[#0a0a0a] border-t-2 border-gray-700 z-50 p-2 md:p-3 flex flex-col justify-end touch-none">
+        
+        <div className="flex justify-between h-full max-w-5xl mx-auto w-full gap-1 md:gap-2">
             
-            {/* D-PAD */}
-            <div className="w-24 md:w-32 h-full grid grid-cols-2 grid-rows-2 gap-1 p-1">
-                <button className="col-span-2 bg-gray-800 border-b-4 border-gray-900 rounded-sm flex items-center justify-center font-display text-xs text-gray-300 active:translate-y-1 active:border-b-0">&uarr;</button>
-                <button className="bg-gray-800 border-b-4 border-gray-900 rounded-sm flex items-center justify-center font-display text-xs text-gray-300 active:translate-y-1 active:border-b-0">&larr;</button>
-                <button className="bg-gray-800 border-b-4 border-gray-900 rounded-sm flex items-center justify-center font-display text-xs text-gray-300 active:translate-y-1 active:border-b-0">&rarr;</button>
-            </div>
-
-            {/* Tactical Actions */}
-            <div className="flex flex-col gap-2 w-20 md:w-28">
-                 {grabbedItem ? (
-                     <button 
-                        onClick={() => handleAttack('throw')}
-                        className="w-full py-2 bg-amber-600 border-2 border-white shadow-[0_0_10px_rgba(217,119,6,0.8)] text-white font-display text-[8px] md:text-[10px] flex flex-col items-center justify-center active:scale-95 transition-transform"
-                    >
-                        <span>ARREMESSAR</span>
-                    </button>
-                 ) : (
+            {/* Left: Movement */}
+            <div className="w-[100px] md:w-[150px] h-full flex flex-col justify-end gap-2 pb-2">
+                <div className="bg-gray-900 border border-gray-800 p-1 flex justify-center gap-1 md:gap-2 h-1/2">
                     <button 
-                        onClick={() => handleAttack('grab')}
-                        disabled={energy < 15}
-                        className="w-full py-2 bg-gray-700 border-2 border-gray-500 text-white font-display text-[8px] md:text-[10px] flex flex-col items-center justify-center active:scale-95 disabled:opacity-50"
+                        className="w-1/2 bg-gray-800 border-b-4 border-gray-950 rounded-sm flex items-center justify-center font-display text-lg text-gray-400 active:translate-y-1 active:border-b-0 active:bg-gray-700"
+                        onPointerDown={() => handleMove('left')}
+                        onClick={() => handleMove('left')}
                     >
-                        <span>AGARRAR</span>
+                        &lt;
                     </button>
-                 )}
-                 <button 
-                    onClick={() => handleAttack('eat')}
-                    className="w-full py-2 bg-[#2d5a27] border-2 border-[#5a8a60] text-white font-display text-[8px] md:text-[10px] flex flex-col items-center justify-center active:scale-95 disabled:opacity-50 hover:bg-[#3a7a33]"
-                >
-                    <span>DEVORAR</span>
-                    <span className="text-[6px] text-green-300 mt-1">+20 HP</span>
-                </button>
+                    <button 
+                        className="w-1/2 bg-gray-800 border-b-4 border-gray-950 rounded-sm flex items-center justify-center font-display text-lg text-gray-400 active:translate-y-1 active:border-b-0 active:bg-gray-700"
+                        onPointerDown={() => handleMove('right')}
+                        onClick={() => handleMove('right')}
+                    >
+                        &gt;
+                    </button>
+                </div>
             </div>
 
-            {/* Core Attacks */}
-            <div className="flex gap-2 md:gap-4 items-center bg-gray-900/50 p-2 rounded-lg border border-gray-800">
+            {/* Center: Contextual Actions */}
+            <div className="flex-1 flex gap-1 md:gap-2 h-full pb-2">
+                 <div className="w-1/2 flex flex-col justify-end gap-2">
+                     <button 
+                        onClick={() => grabbedEntityId ? performAttack('throw') : performAttack('grab')}
+                        disabled={energy < 15}
+                        className={`h-full border-2 ${grabbedEntityId ? 'bg-amber-700 border-amber-500' : 'bg-gray-800 border-gray-600'} rounded-sm flex flex-col items-center justify-center font-display active:scale-95 disabled:opacity-30`}
+                    >
+                        <span className={`text-[8px] md:text-xs ${grabbedEntityId ? 'text-white' : 'text-gray-300'}`}>{grabbedEntityId ? 'ARREMESSAR' : 'AGARRAR'}</span>
+                        <span className="text-[6px] text-gray-500 mt-1">{grabbedEntityId ? '-10 EN' : '-15 EN'}</span>
+                    </button>
+                 </div>
+                 <div className="w-1/2 flex flex-col justify-end gap-2">
+                     <button 
+                        onClick={() => performAttack('eat')}
+                        disabled={energy < 10}
+                        className={`h-full bg-[#1a381a] border-2 border-[#2d5a27] rounded-sm flex flex-col items-center justify-center font-display active:scale-95 disabled:opacity-30 hover:bg-[#2d5a27]`}
+                    >
+                        <span className="text-[8px] md:text-xs text-green-300">DEVORAR</span>
+                        <span className="text-[6px] text-gray-500 mt-1">-10 EN</span>
+                    </button>
+                 </div>
+            </div>
+
+            {/* Right: Core Attacks */}
+            <div className="w-[160px] md:w-[220px] h-full bg-[#151515] border border-gray-800 p-2 rounded-tl-xl flex gap-1 md:gap-2 justify-end items-end pb-2">
                 <button 
-                    onClick={() => handleAttack('punch')}
-                    disabled={energy < 10}
-                    className="w-16 h-16 md:w-20 md:h-20 rounded-full border-4 border-gray-400 bg-gray-700 text-white font-display text-[8px] md:text-[10px] flex flex-col items-center justify-center active:scale-95 disabled:opacity-50 hover:border-white shadow-[0_4px_0_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none transition-all"
+                    onClick={() => performAttack('light')}
+                    disabled={energy < 5}
+                    className="w-[30%] aspect-square rounded-full border-2 border-gray-500 bg-gray-700 text-white font-display text-[8px] flex flex-col items-center justify-center active:scale-90 disabled:opacity-30 shadow-[0_3px_0_#333] active:translate-y-1 active:shadow-none"
                 >
-                    <span>GOLPE</span>
-                    <span className="text-[6px] text-gray-400 mt-1">-10 EN</span>
+                    GOLPE
                 </button>
                 
                 <button 
-                    onClick={() => handleAttack('stomp')}
+                    onClick={() => performAttack('heavy')}
                     disabled={energy < 25}
-                    className="w-16 h-16 md:w-20 md:h-20 rounded-full border-4 border-orange-500 bg-orange-700 text-white font-display text-[8px] md:text-[10px] flex flex-col items-center justify-center active:scale-95 disabled:opacity-50 hover:border-white shadow-[0_4px_0_rgba(154,52,18,1)] active:translate-y-1 active:shadow-none transition-all"
+                    className="w-[35%] aspect-square rounded-full border-2 border-orange-500 bg-orange-700 text-white font-display text-[8px] flex flex-col items-center justify-center active:scale-90 disabled:opacity-30 shadow-[0_4px_0_#7c2d12] active:translate-y-1 active:shadow-none"
                 >
-                    <span>ESMAGAR</span>
-                    <span className="text-[6px] text-orange-300 mt-1">-25 EN</span>
+                    ESMAGAR
                 </button>
 
                 <button 
-                    onClick={() => handleAttack('beam')}
-                    disabled={energy < 40}
-                    className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-purple-400 bg-purple-700 text-white font-display text-[10px] md:text-xs flex flex-col items-center justify-center active:scale-95 disabled:opacity-50 hover:border-white hover:shadow-[0_0_15px_rgba(168,85,247,0.8)] shadow-[0_6px_0_rgba(88,28,135,1)] active:translate-y-1 active:shadow-none transition-all"
+                    onClick={() => performAttack('special')}
+                    disabled={energy < 50}
+                    className="w-[40%] aspect-square rounded-full border-2 border-purple-400 bg-purple-700 text-white font-display text-[10px] flex flex-col items-center justify-center active:scale-90 disabled:opacity-30 shadow-[0_5px_0_#4c1d95] active:translate-y-[5px] active:shadow-none relative overflow-hidden"
                 >
-                    <span>RAIO ATL</span>
-                    <span className="text-[8px] text-purple-300 mt-1">-40 EN</span>
+                    <div className="absolute inset-0 bg-gradient-to-t from-purple-900 to-transparent opacity-50 pointer-events-none" />
+                    <span className="relative z-10 text-shadow-sm">RAIO</span>
                 </button>
             </div>
         </div>
       </div>
+
+      {/* Game Over / Victory Overlay */}
+      {gameState !== 'playing' && (
+          <div className="absolute inset-0 z-[100] bg-black/80 flex flex-col items-center justify-center backdrop-blur-sm">
+              <h1 className={`font-display text-4xl md:text-6xl mb-4 pixel-text-shadow ${gameState === 'victory' ? 'text-green-500' : 'text-red-600'}`}>
+                  {gameState === 'victory' ? 'DEVASTAÇÃO TOTAL' : 'KAIJU ELIMINADO'}
+              </h1>
+              <p className="font-sans text-xl text-white mb-8">PONTUAÇÃO FINAL: {score}</p>
+              <button 
+                  onClick={() => window.location.reload()}
+                  className="bg-[#111] border-4 border-white px-8 py-4 font-display text-xl text-white hover:bg-white hover:text-black transition-colors"
+              >
+                  NOVA INVASÃO
+              </button>
+          </div>
+      )}
       
       <style dangerouslySetInnerHTML={{__html: `
-        @keyframes shake {
-          0% { transform: translate(3px, 3px) rotate(0deg); }
-          10% { transform: translate(-3px, -4px) rotate(-2deg); }
-          20% { transform: translate(-6px, 0px) rotate(2deg); }
-          30% { transform: translate(6px, 4px) rotate(0deg); }
-          40% { transform: translate(3px, -3px) rotate(2deg); }
-          50% { transform: translate(-3px, 4px) rotate(-2deg); }
-          60% { transform: translate(-6px, 3px) rotate(0deg); }
-          70% { transform: translate(6px, 3px) rotate(-2deg); }
-          80% { transform: translate(-3px, -3px) rotate(2deg); }
-          90% { transform: translate(3px, 4px) rotate(0deg); }
-          100% { transform: translate(3px, -4px) rotate(-2deg); }
+        @keyframes shake { 0%, 100% {transform: translate(0,0);} 10%, 30%, 50%, 70%, 90% {transform: translate(-5px,-5px);} 20%, 40%, 60%, 80% {transform: translate(5px,5px);} }
+        @keyframes shake-small { 0%, 100% {transform: translate(0,0);} 25% {transform: translate(-2px,2px);} 75% {transform: translate(2px,-2px);} }
+        @keyframes shake-massive { 0%, 100% {transform: translate(0,0);} 10%, 30%, 50%, 70%, 90% {transform: translate(-10px,-10px) rotate(-2deg);} 20%, 40%, 60%, 80% {transform: translate(10px,10px) rotate(2deg);} }
+        .animate-shake { animation: shake 0.3s ease-in-out; }
+        .animate-shake-small { animation: shake-small 0.2s ease-in-out; }
+        .animate-shake-massive { animation: shake-massive 0.6s ease-in-out; }
+        
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            100% { transform: translateY(-50px) scale(1.2); opacity: 0; }
         }
-        @keyframes shake-small {
-          0% { transform: translate(1px, 1px) rotate(0deg); }
-          25% { transform: translate(-1px, -1px) rotate(-1deg); }
-          50% { transform: translate(-1px, 1px) rotate(1deg); }
-          75% { transform: translate(1px, -1px) rotate(-1deg); }
-          100% { transform: translate(1px, 1px) rotate(0deg); }
-        }
-        .animate-shake {
-          animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
-        }
-        .animate-shake-small {
-          animation: shake-small 0.2s ease-in-out both;
-        }
-        @keyframes rain {
-          0% { transform: translateY(-100vh) translateX(0); }
-          100% { transform: translateY(100vh) translateX(-20vh); }
+        @keyframes lightning {
+            0%, 95%, 98%, 100% { opacity: 0; }
+            96%, 99% { opacity: 0.8; }
         }
       `}} />
     </div>

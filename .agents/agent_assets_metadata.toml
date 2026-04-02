@@ -1,0 +1,26 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "YvVFu1ywhVeyoVCZlp9MB"
+uri = "file://client/src/assets/building_1.png"
+type = "image"
+title = "Destructible building sprite 1"
+
+[[generated]]
+id = "UWBbgK6grR-sAiGwSZvBR"
+uri = "file://client/src/assets/building_2.png"
+type = "image"
+title = "Destructible building sprite 2"
+
+[[generated]]
+id = "E-eAVc6fRXRSxN_UG3h4E"
+uri = "file://client/src/assets/tank.png"
+type = "image"
+title = "Military tank sprite"
+
+[[generated]]
+id = "4wqzeD1Qa838hzTrj1lnJ"
+uri = "file://client/src/assets/heli.png"
+type = "image"
+title = "Military helicopter sprite"
