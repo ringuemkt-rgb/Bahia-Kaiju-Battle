@@ -1,0 +1,58 @@
+[
+  {
+    "id": "colosso_base_atl",
+    "name": "Colosso Base ATL",
+    "class": "player_base",
+    "archetype": "balanced",
+    "signature": ["golpe_pesado", "agarrar_props", "devorar_alvos"],
+    "inspirations": ["forca_humana_mutante", "estrutura_costeira", "atl_9"]
+  },
+  {
+    "id": "caranguejo_do_mangue",
+    "name": "Caranguejo do Mangue",
+    "class": "regional_monster",
+    "archetype": "tank_control",
+    "signature": ["pinça_em_area", "escavacao_de_lama", "carapaca_defensiva"],
+    "inspirations": ["caranguejo", "manguezal", "maré_baixa"]
+  },
+  {
+    "id": "guaiamum_azul",
+    "name": "Guaiamum Azul",
+    "class": "regional_monster",
+    "archetype": "grappler_tank",
+    "signature": ["agarrar", "impacto_lateral", "escudo_natural"],
+    "inspirations": ["guaiamum", "mangue", "costa"]
+  },
+  {
+    "id": "garca_de_nevoa",
+    "name": "Garça de Névoa",
+    "class": "flying_boss",
+    "archetype": "mobility_control",
+    "signature": ["mergulho_perfurante", "voo_curto", "cortina_de_neblina"],
+    "inspirations": ["garca", "neblina_costeira", "farol"]
+  },
+  {
+    "id": "morcego_da_caverna_verde",
+    "name": "Morcego da Caverna Verde",
+    "class": "cave_boss",
+    "archetype": "swarm_sonic",
+    "signature": ["onda_sonica", "eco_atl", "mergulho_noturno"],
+    "inspirations": ["morcego", "caverna", "pancada_grande"]
+  },
+  {
+    "id": "jacare_de_estuario",
+    "name": "Jacaré de Estuário",
+    "class": "amphibious_monster",
+    "archetype": "drag_and_burst",
+    "signature": ["arrasto_para_agua", "giro_brutal", "mordida_de_pressao"],
+    "inspirations": ["jacare", "estuário", "lama"]
+  },
+  {
+    "id": "siri_de_ferro",
+    "name": "Siri de Ferro",
+    "class": "hybrid_military_monster",
+    "archetype": "frontline_shield",
+    "signature": ["pinça_blindada", "arremesso_de_sucata", "barreira_frontal"],
+    "inspirations": ["siri", "porto", "militarizacao"]
+  }
+]
