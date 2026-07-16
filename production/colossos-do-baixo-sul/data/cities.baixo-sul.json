@@ -1,0 +1,74 @@
+[
+  {
+    "id": "itubera",
+    "name": "Ituberá",
+    "role": "starting_city",
+    "biome": "urban_estuary",
+    "landmarks": ["igreja_matriz", "mercado", "cais", "orla_local"],
+    "systems": ["civilians", "military_patrols", "boats_as_props", "rain", "night"],
+    "bossId": "capitao_da_contencao"
+  },
+  {
+    "id": "pancada_grande",
+    "name": "Pancada Grande",
+    "role": "atl_landmark",
+    "biome": "waterfall_forest_cave",
+    "landmarks": ["cachoeira", "trilhas", "cavernas_atl"],
+    "systems": ["fog_atl", "verticality", "earthquake", "wild_mutants"],
+    "bossId": "morcego_da_caverna_verde"
+  },
+  {
+    "id": "itacare",
+    "name": "Itacaré",
+    "role": "coastal_tourism_map",
+    "biome": "beach_jungle_nightlife",
+    "landmarks": ["praia_da_concha", "farol_da_concha", "pituba_noturna"],
+    "systems": ["wind", "tourist_panic", "flying_boss", "storm"],
+    "bossId": "garca_de_nevoa"
+  },
+  {
+    "id": "baia_de_camamu",
+    "name": "Baía de Camamu",
+    "role": "maritime_region",
+    "biome": "islands_mangrove_estuary",
+    "landmarks": ["trapiches", "ilhas", "vilas_pesqueiras"],
+    "systems": ["high_tide", "low_tide", "boat_chase", "sea_boss"],
+    "bossId": "horror_das_mares"
+  },
+  {
+    "id": "ilha_do_timbuca",
+    "name": "Ilha do Timbuca",
+    "role": "secret_lab_region",
+    "biome": "forest_lab_hidden_base",
+    "landmarks": ["torres", "laboratorio_oculto", "tunel_atl"],
+    "systems": ["drones", "elite_soldiers", "atl_reactors"],
+    "bossId": "sentinela_atl_9"
+  },
+  {
+    "id": "morro_de_sao_paulo",
+    "name": "Morro de São Paulo",
+    "role": "tourist_ruin_region",
+    "biome": "beach_hill_hotel_port",
+    "landmarks": ["farol", "escadarias", "pousadas", "porto_turistico"],
+    "systems": ["vertical_routes", "evacuation", "storm", "boss_arena"],
+    "bossId": "guardiao_do_farol"
+  },
+  {
+    "id": "valenca",
+    "name": "Valença",
+    "role": "industrial_port_region",
+    "biome": "port_industrial_market",
+    "landmarks": ["porto", "galpoes", "mercado_do_peixe", "guindastes"],
+    "systems": ["containers_as_weapons", "tanks", "industrial_hazards"],
+    "bossId": "ferreiro_do_porto"
+  },
+  {
+    "id": "salvador",
+    "name": "Salvador",
+    "role": "final_scale_region",
+    "biome": "dense_coastal_city",
+    "landmarks": ["comercio", "orla", "elevador_lacerda", "farol_da_barra"],
+    "systems": ["max_wanted", "heavy_air_support", "final_boss"],
+    "bossId": "entidade_de_convergencia_atl"
+  }
+]
