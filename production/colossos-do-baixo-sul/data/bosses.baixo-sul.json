@@ -1,0 +1,58 @@
+[
+  {
+    "id": "capitao_da_contencao",
+    "region": "itubera",
+    "type": "mutated_soldier_boss",
+    "phases": 2,
+    "gimmick": "elite soldier fused with containment armor and ATL reactor spine"
+  },
+  {
+    "id": "morcego_da_caverna_verde",
+    "region": "pancada_grande",
+    "type": "cave_radiation_boss",
+    "phases": 3,
+    "gimmick": "sound waves, darkness and vertical arena around waterfall cave"
+  },
+  {
+    "id": "horror_das_mares",
+    "region": "baia_de_camamu",
+    "type": "sea_boss",
+    "phases": 3,
+    "gimmick": "high tide shifts arena and trapiche sections break away"
+  },
+  {
+    "id": "sentinela_atl_9",
+    "region": "ilha_do_timbuca",
+    "type": "mutated_black_ops_boss",
+    "phases": 2,
+    "gimmick": "uses drones, ATL bursts and stealth angles inside secret lab perimeter"
+  },
+  {
+    "id": "garca_de_nevoa",
+    "region": "itacare",
+    "type": "flying_coastal_boss",
+    "phases": 2,
+    "gimmick": "wind, fog and plunge attacks around beaches and lighthouse"
+  },
+  {
+    "id": "guardiao_do_farol",
+    "region": "morro_de_sao_paulo",
+    "type": "tourist_zone_boss",
+    "phases": 3,
+    "gimmick": "electric light pulses, hotel collapse and vertical chase routes"
+  },
+  {
+    "id": "ferreiro_do_porto",
+    "region": "valenca",
+    "type": "industrial_mutant_boss",
+    "phases": 3,
+    "gimmick": "uses cranes, chains and containers as massive weapons"
+  },
+  {
+    "id": "entidade_de_convergencia_atl",
+    "region": "salvador",
+    "type": "final_boss",
+    "phases": 4,
+    "gimmick": "city-scale ATL convergence, military saturation and tectonic pulses"
+  }
+]
