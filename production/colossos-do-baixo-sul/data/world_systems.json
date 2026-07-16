@@ -1,0 +1,38 @@
+{
+  "wantedSystem": {
+    "levels": [
+      "observation",
+      "local_response",
+      "drones_and_armor",
+      "air_support_and_containment",
+      "full_military_lockdown"
+    ]
+  },
+  "weatherSystem": {
+    "states": [
+      "sun",
+      "night",
+      "light_rain",
+      "tropical_rain",
+      "fog",
+      "electric_storm",
+      "atl_mist",
+      "strong_wind"
+    ]
+  },
+  "tideSystem": {
+    "states": ["low_tide", "mid_tide", "high_tide", "storm_surge"],
+    "affectedBiomes": ["estuary", "mangrove", "port", "beach", "islands"]
+  },
+  "npcDirector": {
+    "civilianStates": ["routine", "alert", "panic", "flee", "hide", "evacuate"],
+    "militaryStates": ["patrol", "search", "engage", "reinforce", "contain"],
+    "boatTraffic": ["fishing", "transport", "military_convoy", "escape"]
+  },
+  "recoverySystem": {
+    "consumeHumanForHp": true,
+    "consumeTroopForAtl": true,
+    "panicImpact": true,
+    "wantedImpact": true
+  }
+}
