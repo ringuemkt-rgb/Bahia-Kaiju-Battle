@@ -1,0 +1,1 @@
+886c27dff9dc4f2a4ee89262dfdffa59dbfe26044f592bbd4797965b50147f1d  builds/android/CriaDoTatame-debug.apk

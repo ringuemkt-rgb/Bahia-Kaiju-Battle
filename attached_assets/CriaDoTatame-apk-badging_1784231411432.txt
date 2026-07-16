@@ -1,0 +1,5 @@
+package: name='com.criadotatame.pressao'
+versionName='1.0.0'
+minSdkVersion='21'
+targetSdkVersion='34'
+architecture='arm64-v8a'

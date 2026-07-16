@@ -24,3 +24,21 @@ id = "4wqzeD1Qa838hzTrj1lnJ"
 uri = "file://client/src/assets/heli.png"
 type = "image"
 title = "Military helicopter sprite"
+
+[[generated]]
+id = "PpYARvgJkSKGXjDqqKQWb"
+uri = "file://client/src/assets/explosion_1.png"
+type = "image"
+title = "Explosion particle frame 1"
+
+[[generated]]
+id = "DnSimFPeJ3WDFa5SbH-f_"
+uri = "file://client/src/assets/explosion_2.png"
+type = "image"
+title = "Explosion particle frame 2"
+
+[[generated]]
+id = "n4L5qvbDwmqVuCJ-moMQa"
+uri = "file://client/src/assets/explosion_3.png"
+type = "image"
+title = "Explosion particle frame 3"

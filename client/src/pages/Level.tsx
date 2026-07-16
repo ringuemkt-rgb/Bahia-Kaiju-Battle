@@ -20,6 +20,10 @@ import building2 from "../assets/building_2.png";
 import tank from "../assets/tank.png";
 import heli from "../assets/heli.png";
 
+import exp1 from "../assets/explosion_1.png";
+import exp2 from "../assets/explosion_2.png";
+import exp3 from "../assets/explosion_3.png";
+
 // --- Enums & Types ---
 type Environment = 'clear' | 'rain' | 'fog' | 'storm';
 type TideLevel = 'high' | 'low' | 'normal';
@@ -33,6 +37,14 @@ interface CombatText {
     x: number;
     y: number;
     type: 'damage' | 'heal' | 'energy' | 'system';
+}
+
+interface Particle {
+    id: number;
+    x: number;
+    y: number;
+    type: 'explosion' | 'blood' | 'dust';
+    createdAt: number;
 }
 
 interface GameEntity {
@@ -75,14 +87,15 @@ export default function Level() {
   const [weather, setWeather] = useState<Environment>('clear');
   const [tide, setTide] = useState<TideLevel>('normal');
   const [isNight, setIsNight] = useState(false);
-  const [isEarthquake, setIsEarthquake] = useState(false);
 
   // --- Entities & FX ---
   const [entities, setEntities] = useState<GameEntity[]>([]);
   const [combatTexts, setCombatTexts] = useState<CombatText[]>([]);
+  const [particles, setParticles] = useState<Particle[]>([]);
   const [messages, setMessages] = useState<string[]>([]);
   
   const combatTextIdCounter = useRef(0);
+  const particleIdCounter = useRef(0);
   const engineTickRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- Helpers ---
@@ -92,6 +105,14 @@ export default function Level() {
       setTimeout(() => {
           setCombatTexts(prev => prev.filter(ct => ct.id !== id));
       }, 1000);
+  };
+
+  const spawnParticle = (x: number, y: number, type: Particle['type']) => {
+      const id = particleIdCounter.current++;
+      setParticles(prev => [...prev, { id, x, y, type, createdAt: Date.now() }]);
+      setTimeout(() => {
+          setParticles(prev => prev.filter(p => p.id !== id));
+      }, 600); // Life of explosion animation
   };
 
   const addMessage = (msg: string) => {
@@ -160,7 +181,7 @@ export default function Level() {
       // 1. Resource Regen
       setEnergy(prev => Math.min(maxEnergy, prev + 1));
       
-      // 2. Environment Dynamics (Simplified fast-forward for testing)
+      // 2. Environment Dynamics
       if (Math.random() < 0.02) {
           const weathers: Environment[] = ['clear', 'rain', 'fog', 'storm'];
           setWeather(weathers[Math.floor(Math.random() * weathers.length)]);
@@ -187,7 +208,6 @@ export default function Level() {
                   case 'civilian':
                       if (distToPlayer < 30 && newState !== 'panicking') {
                           newState = 'panicking';
-                          spawnCombatText('!', ent.x, ent.y + 10, 'system');
                       }
                       if (newState === 'panicking' || newState === 'fleeing') {
                           const dir = ent.x < playerX ? -1 : 1;
@@ -210,6 +230,7 @@ export default function Level() {
                               setHealth(h => Math.max(0, h - damage));
                               spawnCombatText(`-${damage}`, playerX, 50, 'damage');
                               triggerScreenShake('small');
+                              spawnParticle(playerX + (Math.random()*10 - 5), 30 + (Math.random()*20), 'explosion');
                           }
                       }
                       break;
@@ -222,6 +243,7 @@ export default function Level() {
                               setHealth(h => Math.max(0, h - 20));
                               spawnCombatText('-20', playerX, 50, 'damage');
                               triggerScreenShake('large');
+                              spawnParticle(playerX, 30, 'explosion');
                           }
                       }
                       break;
@@ -256,8 +278,6 @@ export default function Level() {
                  updated.push({
                     id: `heli_${Date.now()}`, type: 'military_heli', x: spawnSide, y: 70, width: 20, height: 12, hp: 80, maxHp: 80, sprite: heli, state: 'idle', vx: 0, vy: 0, threatLevel: 4
                  });
-              } else {
-                 // Infantry placeholder logic
               }
           }
 
@@ -344,6 +364,7 @@ export default function Level() {
                 if (distance > 0 && distance < range && e.state !== 'grabbed') {
                     hitCount++;
                     spawnCombatText(`-${totalDmg}`, e.x, e.y + e.height, 'damage');
+                    spawnParticle(e.x, e.y + (e.height/2), 'explosion');
                     return { ...e, hp: e.hp - totalDmg };
                 }
                 return e;
@@ -410,11 +431,17 @@ export default function Level() {
             if (e.type.includes('military')) finalDamage *= (type === 'special' ? 2 : 1);
 
             spawnCombatText(`-${finalDamage}`, e.x, e.y + e.height + 5, 'damage');
+            
+            // Spawn explosion effect where hit occurred
+            spawnParticle(e.x, e.y + (e.height/2), 'explosion');
 
             // Calculate destruction points if this hit kills a structure
             if (e.hp - finalDamage <= 0 && e.type.includes('building')) {
                 destructionEarned += e.type === 'building_large' ? 10 : 5;
                 setWantedLevel(prev => Math.min(5, prev + 0.5));
+                // Extra explosion for building destruction
+                spawnParticle(e.x, e.y + e.height, 'explosion');
+                spawnParticle(e.x, e.y, 'explosion');
             }
 
             return { ...e, hp: e.hp - finalDamage };
@@ -580,6 +607,28 @@ export default function Level() {
           </div>
         )})}
 
+        {/* Explosion Particles */}
+        {particles.map(p => {
+             const progress = (Date.now() - p.createdAt) / 600; // 0 to 1
+             const frameIndex = Math.min(2, Math.floor(progress * 3));
+             const frames = [exp1, exp2, exp3];
+             
+             return (
+                 <div
+                     key={p.id}
+                     className="absolute z-40 w-[15vh] h-[15vh] pointer-events-none mix-blend-screen"
+                     style={{
+                         left: `${p.x}%`,
+                         bottom: `${p.y}%`,
+                         transform: `translate(-50%, 50%) scale(${1 + progress})`,
+                         opacity: 1 - progress
+                     }}
+                 >
+                     <img src={frames[frameIndex]} className="w-full h-full object-contain" />
+                 </div>
+             )
+        })}
+
         {/* Player Kaiju Rendering */}
         <div 
             className="absolute z-30 flex flex-col items-center justify-end"
@@ -644,11 +693,11 @@ export default function Level() {
       {/* ---------------- CONTROLS BOTTOM ---------------- */}
       <div className="absolute bottom-0 w-full h-[160px] md:h-[180px] bg-[#0a0a0a] border-t-2 border-gray-700 z-50 p-2 md:p-3 flex flex-col justify-end touch-none">
         
-        <div className="flex justify-between h-full max-w-5xl mx-auto w-full gap-1 md:gap-2">
+        <div className="flex justify-between h-full max-w-5xl mx-auto w-full gap-2">
             
             {/* Left: Movement */}
-            <div className="w-[100px] md:w-[150px] h-full flex flex-col justify-end gap-2 pb-2">
-                <div className="bg-gray-900 border border-gray-800 p-1 flex justify-center gap-1 md:gap-2 h-1/2">
+            <div className="w-[120px] md:w-[150px] h-full flex flex-col justify-end gap-2 pb-2">
+                <div className="bg-gray-900 border border-gray-800 p-1 flex justify-center gap-2 h-1/2">
                     <button 
                         className="w-1/2 bg-gray-800 border-b-4 border-gray-950 rounded-sm flex items-center justify-center font-display text-lg text-gray-400 active:translate-y-1 active:border-b-0 active:bg-gray-700"
                         onPointerDown={() => handleMove('left')}
@@ -667,14 +716,14 @@ export default function Level() {
             </div>
 
             {/* Center: Contextual Actions */}
-            <div className="flex-1 flex gap-1 md:gap-2 h-full pb-2">
+            <div className="flex-1 flex gap-2 h-full pb-2">
                  <div className="w-1/2 flex flex-col justify-end gap-2">
                      <button 
                         onClick={() => grabbedEntityId ? performAttack('throw') : performAttack('grab')}
                         disabled={energy < 15}
                         className={`h-full border-2 ${grabbedEntityId ? 'bg-amber-700 border-amber-500' : 'bg-gray-800 border-gray-600'} rounded-sm flex flex-col items-center justify-center font-display active:scale-95 disabled:opacity-30`}
                     >
-                        <span className={`text-[8px] md:text-xs ${grabbedEntityId ? 'text-white' : 'text-gray-300'}`}>{grabbedEntityId ? 'ARREMESSAR' : 'AGARRAR'}</span>
+                        <span className={`text-[10px] md:text-xs ${grabbedEntityId ? 'text-white' : 'text-gray-300'}`}>{grabbedEntityId ? 'ARREMESSAR' : 'AGARRAR'}</span>
                         <span className="text-[6px] text-gray-500 mt-1">{grabbedEntityId ? '-10 EN' : '-15 EN'}</span>
                     </button>
                  </div>
@@ -682,16 +731,16 @@ export default function Level() {
                      <button 
                         onClick={() => performAttack('eat')}
                         disabled={energy < 10}
-                        className={`h-full bg-[#1a381a] border-2 border-[#2d5a27] rounded-sm flex flex-col items-center justify-center font-display active:scale-95 disabled:opacity-30 hover:bg-[#2d5a27]`}
+                        className={`h-full bg-[#1a381a] border-2 border-[#2d5a27] rounded-sm flex flex-col items-center justify-center font-display active:scale-95 disabled:opacity-30 hover:bg-[#3a7a33]`}
                     >
-                        <span className="text-[8px] md:text-xs text-green-300">DEVORAR</span>
+                        <span className="text-[10px] md:text-xs text-green-300">DEVORAR</span>
                         <span className="text-[6px] text-gray-500 mt-1">-10 EN</span>
                     </button>
                  </div>
             </div>
 
             {/* Right: Core Attacks */}
-            <div className="w-[160px] md:w-[220px] h-full bg-[#151515] border border-gray-800 p-2 rounded-tl-xl flex gap-1 md:gap-2 justify-end items-end pb-2">
+            <div className="w-[180px] md:w-[220px] h-full bg-[#151515] border border-gray-800 p-2 rounded-tl-xl flex gap-2 justify-end items-end pb-2">
                 <button 
                     onClick={() => performAttack('light')}
                     disabled={energy < 5}
